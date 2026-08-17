@@ -62,7 +62,7 @@ export function CoverFlow({
   const [dragOffset, setDragOffset] = useState(0);
   const [velocity, setVelocity] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isMobile, albumSize } = useResponsive();
+  const { isMobile, isSmallMobile, albumSize } = useResponsive();
   const lastDragTime = useRef(Date.now());
   const animationRef = useRef<number>();
 
@@ -207,9 +207,9 @@ export function CoverFlow({
     const baseOffset = index - currentIndex;
     const offset = baseOffset + (isDragging ? dragOffset / 100 : 0);
     
-    // Enhanced Apple CoverFlow algorithm - wider spacing for better clickability and more visible albums
-    const SPACING = isMobile ? 120 : 160; // Increased spacing for better click targets and more visible cards
-    const ROTATION = 55; // Slightly reduced rotation for better visibility
+    // CoverFlow layout constants — tighter on mobile so cards stay on-screen
+    const SPACING = isSmallMobile ? 70 : isMobile ? 90 : 160;
+    const ROTATION = isSmallMobile ? 40 : isMobile ? 48 : 55;
     
     if (Math.abs(offset) < 0.1) {
       // Center card - prominent focal point
@@ -277,9 +277,9 @@ export function CoverFlow({
     <div className="w-full max-w-7xl mx-auto relative" style={{ zIndex: 300 }}>
       <div 
         ref={containerRef}
-        className="relative h-96 flex items-center justify-center overflow-visible select-none"
+        className="relative h-72 sm:h-96 flex items-center justify-center overflow-visible select-none"
         style={{ 
-          perspective: '1500px', // Increased perspective for wider view
+          perspective: isSmallMobile ? '600px' : isMobile ? '900px' : '1500px',
           perspectiveOrigin: 'center center',
           cursor: isDragging ? 'grabbing' : 'grab'
         }}
