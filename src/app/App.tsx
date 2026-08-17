@@ -15,6 +15,7 @@ export default function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [autoPlayNext, setAutoPlayNext] = useState(false); // triggers autoplay when song auto-advances
 
   // Drag-to-open state
   const dragStartY = useRef<number | null>(null);
@@ -102,6 +103,33 @@ export default function App() {
 
   const handlePlayingChange = (playing: boolean) => {
     setIsPlaying(playing);
+    if (playing) setAutoPlayNext(false); // clear flag once playing starts
+  };
+
+  // Auto-advance to next song when current one ends
+  const handleSongEnd = () => {
+    if (songs.length === 0) return;
+    const nextIndex = (currentIndex + 1) % songs.length; // wraps around
+    const nextSong = songs[nextIndex];
+    setCurrentIndex(nextIndex);
+    setSelectedSong(nextSong);
+    setAutoPlayNext(true); // tell Player to auto-start when ready
+  };
+
+  const handleNext = () => {
+    if (songs.length === 0) return;
+    const nextIndex = (currentIndex + 1) % songs.length;
+    setCurrentIndex(nextIndex);
+    setSelectedSong(songs[nextIndex]);
+    setAutoPlayNext(isPlaying); // keep playing if already playing
+  };
+
+  const handlePrev = () => {
+    if (songs.length === 0) return;
+    const prevIndex = (currentIndex - 1 + songs.length) % songs.length;
+    setCurrentIndex(prevIndex);
+    setSelectedSong(songs[prevIndex]);
+    setAutoPlayNext(isPlaying); // keep playing if already playing
   };
 
   // Handle drag/tap on the pill handle
@@ -215,8 +243,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="relative flex-1 flex flex-col items-center justify-center px-4 md:px-8 pb-16" style={{ zIndex: 200, height: '100vh' }}>
+      {/* Main Content - fills full viewport, centred vertically */}
+      <div
+        className="relative flex-1 flex flex-col items-center justify-center px-2 sm:px-4 md:px-8 pb-4 sm:pb-16"
+        style={{ zIndex: 200, height: '100dvh' }}
+      >
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
@@ -254,22 +285,26 @@ export default function App() {
             />
 
             {selectedSong && (
-              <div className="mt-8 text-center relative" style={{ zIndex: 250 }}>
+              <div className="mt-4 sm:mt-8 text-center relative" style={{ zIndex: 250 }}>
                 <div className="bg-transparent p-2">
-                  <h2 className="text-xl font-light mb-2 text-white drop-shadow-lg">
+                  <h2 className="text-base sm:text-xl font-light mb-1 sm:mb-2 text-white drop-shadow-lg px-4 truncate max-w-xs sm:max-w-none">
                     {selectedSong.title}
                   </h2>
-                  <p className="text-base mb-1 font-light text-gray-300 drop-shadow-md">
+                  <p className="text-sm sm:text-base mb-1 font-light text-gray-300 drop-shadow-md">
                     {selectedSong.artist}
                   </p>
                   {selectedSong.albumName && (
-                    <p className="text-sm mb-4 font-light text-gray-400 drop-shadow-md">
+                    <p className="text-xs sm:text-sm mb-3 sm:mb-4 font-light text-gray-400 drop-shadow-md">
                       from {selectedSong.albumName} {selectedSong.year && `(${selectedSong.year})`}
                     </p>
                   )}
                   <Player
                     youtubeId={selectedSong.youtubeId}
                     onPlayingChange={handlePlayingChange}
+                    onSongEnd={handleSongEnd}
+                    onNext={currentIndex < songs.length - 1 ? handleNext : undefined}
+                    onPrev={currentIndex > 0 ? handlePrev : undefined}
+                    autoPlayOnReady={autoPlayNext}
                   />
                 </div>
               </div>

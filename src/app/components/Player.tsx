@@ -1,29 +1,34 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { SimpleBackgroundVideo } from './SimpleBackgroundVideo';
+import { useResponsive } from '../hooks/useResponsive';
 
 interface PlayerProps {
   youtubeId: string;
   onPlayingChange?: (isPlaying: boolean) => void;
+  onSongEnd?: () => void;
+  onNext?: () => void;
+  onPrev?: () => void;
+  autoPlayOnReady?: boolean;
 }
 
-export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false); // Start paused until user clicks play
+export function Player({ youtubeId, onPlayingChange, onSongEnd, onNext, onPrev, autoPlayOnReady = false }: PlayerProps) {
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const playerRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { isMobile } = useResponsive();
 
-  // Use a ref to track isPlaying so YouTube callbacks always see the latest value
+  // Refs so callbacks inside YouTube events always see latest values
   const isPlayingRef = useRef(false);
   const onPlayingChangeRef = useRef(onPlayingChange);
+  const onSongEndRef = useRef(onSongEnd);
+  const autoPlayOnReadyRef = useRef(autoPlayOnReady);
 
   // Keep refs in sync with latest values
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
-
-  useEffect(() => {
-    onPlayingChangeRef.current = onPlayingChange;
-  }, [onPlayingChange]);
+  useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+  useEffect(() => { onPlayingChangeRef.current = onPlayingChange; }, [onPlayingChange]);
+  useEffect(() => { onSongEndRef.current = onSongEnd; }, [onSongEnd]);
+  useEffect(() => { autoPlayOnReadyRef.current = autoPlayOnReady; }, [autoPlayOnReady]);
 
   // Stable initializePlayer stored in a ref so useEffect doesn't need it as a dependency
   const initializePlayerRef = useRef<() => void>(() => {});
@@ -52,11 +57,26 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
       events: {
         onReady: () => {
           setIsReady(true);
-          // Player is ready - wait for user to click play
+          // Auto-play if the parent requested it (e.g. after auto-advancing songs)
+          if (autoPlayOnReadyRef.current) {
+            setTimeout(() => {
+              playerRef.current?.playVideo();
+            }, 300);
+          }
         },
         onStateChange: (event: any) => {
-          // Always read from ref to avoid stale closure
-          const isCurrentlyPlaying = event.data === (window as any).YT.PlayerState.PLAYING;
+          const state = event.data;
+          const YTState = (window as any).YT.PlayerState;
+
+          if (state === YTState.ENDED) {
+            // Song finished — notify parent to advance to next
+            setIsPlaying(false);
+            onPlayingChangeRef.current?.(false);
+            onSongEndRef.current?.();
+            return;
+          }
+
+          const isCurrentlyPlaying = state === YTState.PLAYING;
           setIsPlaying(isCurrentlyPlaying);
           onPlayingChangeRef.current?.(isCurrentlyPlaying);
         }
@@ -111,17 +131,18 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
       <SimpleBackgroundVideo youtubeId={youtubeId} isPlaying={isPlaying} />
 
       {/* iOS-style Music Controls */}
-      <div className="flex flex-col items-center gap-6 relative" style={{ zIndex: 100 }}>
+      <div className="flex flex-col items-center gap-4 sm:gap-6 relative" style={{ zIndex: 100 }}>
         {/* Main Controls Row */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6 sm:gap-8">
           {/* Previous Button */}
           <button
-            className="group relative flex items-center justify-center w-12 h-12 
-                       text-white/80 hover:text-white transition-all duration-200 
-                       transform hover:scale-110 active:scale-95"
-            disabled
+            onClick={onPrev}
+            disabled={!onPrev}
+            className={`group relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12
+                       transition-all duration-200 transform active:scale-95
+                       ${onPrev ? 'text-white/80 hover:text-white hover:scale-110' : 'text-white/30 cursor-not-allowed'}`}
           >
-            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 sm:w-8 sm:h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
             </svg>
           </button>
@@ -130,7 +151,7 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
           <button
             onClick={handleTogglePlay}
             disabled={!isReady}
-            className={`group relative flex items-center justify-center w-20 h-20 
+            className={`group relative flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20
                        bg-white rounded-full shadow-2xl hover:shadow-3xl 
                        transition-all duration-300 transform hover:scale-105 active:scale-95
                        ${!isReady ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -144,7 +165,7 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
           >
             {!isReady ? (
               <svg 
-                className="w-8 h-8 text-black animate-spin" 
+                className="w-6 h-6 sm:w-8 sm:h-8 text-black animate-spin" 
                 fill="none" 
                 viewBox="0 0 24 24"
               >
@@ -153,7 +174,7 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
               </svg>
             ) : !isPlaying ? (
               <svg 
-                className="w-8 h-8 text-black ml-1 group-hover:text-gray-800 transition-colors" 
+                className="w-6 h-6 sm:w-8 sm:h-8 text-black ml-1 group-hover:text-gray-800 transition-colors" 
                 fill="currentColor" 
                 viewBox="0 0 24 24"
               >
@@ -161,7 +182,7 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
               </svg>
             ) : (
               <svg 
-                className="w-8 h-8 text-black group-hover:text-gray-800 transition-colors" 
+                className="w-6 h-6 sm:w-8 sm:h-8 text-black group-hover:text-gray-800 transition-colors" 
                 fill="currentColor" 
                 viewBox="0 0 24 24"
               >
@@ -176,12 +197,13 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
 
           {/* Next Button */}
           <button
-            className="group relative flex items-center justify-center w-12 h-12 
-                       text-white/80 hover:text-white transition-all duration-200 
-                       transform hover:scale-110 active:scale-95"
-            disabled
+            onClick={onNext}
+            disabled={!onNext}
+            className={`group relative flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12
+                       transition-all duration-200 transform active:scale-95
+                       ${onNext ? 'text-white/80 hover:text-white hover:scale-110' : 'text-white/30 cursor-not-allowed'}`}
           >
-            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 sm:w-8 sm:h-8" fill="currentColor" viewBox="0 0 24 24">
               <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
             </svg>
           </button>
