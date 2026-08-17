@@ -57,7 +57,7 @@ If a feature made the app feel colder, it got cut — no matter how clever it wa
 ## Screenshots
 
 <p align="center">
-  <img src="favicon/screenshot-1.png" alt="Libreo player screenshot" width="80%" />
+  <img src="favicon/Screenshot 2026-08-18 004625.png" alt="Libreo player screenshot" width="80%" />
 </p>
 
 ## A Note From the Maker
