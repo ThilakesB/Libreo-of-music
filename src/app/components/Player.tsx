@@ -7,37 +7,30 @@ interface PlayerProps {
 }
 
 export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(true); // Start as playing by default
+  const [isPlaying, setIsPlaying] = useState(false); // Start paused until user clicks play
   const [isReady, setIsReady] = useState(false);
   const playerRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Initialize YouTube API when component mounts
+  // Use a ref to track isPlaying so YouTube callbacks always see the latest value
+  const isPlayingRef = useRef(false);
+  const onPlayingChangeRef = useRef(onPlayingChange);
+
+  // Keep refs in sync with latest values
   useEffect(() => {
-    // Load YouTube IFrame API if not already loaded
-    if (!(window as any).YT) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-      
-      (window as any).onYouTubeIframeAPIReady = () => {
-        initializePlayer();
-      };
-    } else {
-      initializePlayer();
-    }
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
-    return () => {
-      if (playerRef.current) {
-        playerRef.current.destroy?.();
-      }
-    };
-  }, [youtubeId]);
+  useEffect(() => {
+    onPlayingChangeRef.current = onPlayingChange;
+  }, [onPlayingChange]);
 
-  const initializePlayer = () => {
+  // Stable initializePlayer stored in a ref so useEffect doesn't need it as a dependency
+  const initializePlayerRef = useRef<() => void>(() => {});
+  initializePlayerRef.current = () => {
     if (playerRef.current) {
       playerRef.current.destroy();
+      playerRef.current = null;
     }
 
     playerRef.current = new (window as any).YT.Player('youtube-audio-player', {
@@ -59,29 +52,47 @@ export function Player({ youtubeId, onPlayingChange }: PlayerProps) {
       events: {
         onReady: () => {
           setIsReady(true);
-          // Auto-start playing when YouTube player is ready
-          setTimeout(() => {
-            if (playerRef.current?.playVideo) {
-              playerRef.current.playVideo();
-            }
-          }, 500);
+          // Player is ready - wait for user to click play
         },
         onStateChange: (event: any) => {
+          // Always read from ref to avoid stale closure
           const isCurrentlyPlaying = event.data === (window as any).YT.PlayerState.PLAYING;
-          if (isCurrentlyPlaying !== isPlaying) {
-            setIsPlaying(isCurrentlyPlaying);
-            onPlayingChange?.(isCurrentlyPlaying);
-          }
+          setIsPlaying(isCurrentlyPlaying);
+          onPlayingChangeRef.current?.(isCurrentlyPlaying);
         }
       }
     });
   };
 
+  // Initialize YouTube API when component mounts or youtubeId changes
+  useEffect(() => {
+    const init = () => initializePlayerRef.current();
+
+    if (!(window as any).YT || !(window as any).YT.Player) {
+      const tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      (window as any).onYouTubeIframeAPIReady = init;
+    } else {
+      init();
+    }
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy?.();
+        playerRef.current = null;
+      }
+      setIsReady(false);
+      setIsPlaying(false);
+    };
+  }, [youtubeId]);
+
   const handleTogglePlay = () => {
     if (!isReady || !playerRef.current) return;
 
     try {
-      if (isPlaying) {
+      if (isPlayingRef.current) {
         playerRef.current.pauseVideo();
       } else {
         playerRef.current.playVideo();

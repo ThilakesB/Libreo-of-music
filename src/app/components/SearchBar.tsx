@@ -80,12 +80,7 @@ export function SearchBar({ onSearch }: SearchBarProps) {
         )}
       </div>
       
-      {/* Search suggestions/hints */}
-      <div className="mt-2 text-center">
-        <p className="text-xs text-gray-500 font-light">
-          Search for artists like "Beatles", "Drake", "Taylor Swift" or leave empty for Top 50
-        </p>
-      </div>
+
     </form>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CoverFlow } from './components/CoverFlow';
 import { SearchBar } from './components/SearchBar';
 import { Player } from './components/Player';
@@ -14,6 +14,11 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Drag-to-open state
+  const dragStartY = useRef<number | null>(null);
+  const isDragging = useRef(false);
 
   // Fast iTunes album cover loading - no fallbacks, direct API only
   const {
@@ -32,7 +37,7 @@ export default function App() {
   const loadSongs = async (query: string = ''): Promise<Song[]> => {
     // Minimal delay for smooth UX
     await new Promise(resolve => setTimeout(resolve, 50));
-    
+
     if (!query.trim()) {
       // Return all trending songs - covers loaded dynamically from iTunes
       return localAlbumService.getTrendingSongs();
@@ -46,7 +51,7 @@ export default function App() {
     setLoading(true);
     setError(null);
     setSearchQuery(query);
-    
+
     try {
       const songsData = await loadSongs(query);
       setSongs(songsData);
@@ -64,14 +69,21 @@ export default function App() {
     fetchSongs();
   }, []);
 
-  // Set initial selected song to middle track when songs load and start playing by default
+  // Set initial selected song to middle track when songs load
   useEffect(() => {
     if (songs.length > 0 && !selectedSong) {
       const middleIndex = Math.floor(songs.length / 2);
       setSelectedSong(songs[middleIndex]);
-      setIsPlaying(true); // Auto-play the first song when app loads
+      // isPlaying stays false - user must click play to start
     }
   }, [songs, selectedSong]);
+
+  // Close drawer on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSearchOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleSearch = (query: string) => {
     fetchSongs(query);
@@ -80,7 +92,7 @@ export default function App() {
   const handleSongSelect = (song: Song) => {
     setSelectedSong(song);
     setIsPlaying(false); // Reset playing state when selecting new song
-    
+
     // Update current index
     const index = songs.findIndex(s => s.id === song.id);
     if (index !== -1) {
@@ -92,25 +104,40 @@ export default function App() {
     setIsPlaying(playing);
   };
 
-  const totalSongsCount = localAlbumService.getTotalSongCount();
-  const displayText = searchQuery 
-    ? `${songs.length} results for "${searchQuery}"`
-    : `Top ${totalSongsCount} Trending`;
+  // Handle drag/tap on the pill handle
+  const handleHandlePointerDown = (e: React.PointerEvent) => {
+    dragStartY.current = e.clientY;
+    isDragging.current = false;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleHandlePointerMove = (e: React.PointerEvent) => {
+    if (dragStartY.current === null) return;
+    const delta = e.clientY - dragStartY.current;
+    if (Math.abs(delta) > 5) isDragging.current = true;
+    if (delta > 30 && !searchOpen) setSearchOpen(true);
+    if (delta < -30 && searchOpen) setSearchOpen(false);
+  };
+
+  const handleHandlePointerUp = () => {
+    if (!isDragging.current) setSearchOpen(prev => !prev);
+    dragStartY.current = null;
+  };
 
   return (
-    <div 
+    <div
       className="h-screen text-white overflow-hidden relative"
       style={{
         background: 'linear-gradient(to bottom, #000000 0%, #111111 100%)',
-        zIndex: 1, // Ensure proper stacking context
+        zIndex: 1,
         position: 'relative',
         width: '100vw',
         height: '100vh',
-        isolation: 'isolate' // Create new stacking context to prevent z-index issues
+        isolation: 'isolate'
       }}
     >
       {/* Reflective floor */}
-      <div 
+      <div
         className="fixed bottom-0 left-0 right-0 h-1/2 pointer-events-none"
         style={{
           background: 'linear-gradient(to top, rgba(255,255,255,0.02) 0%, transparent 100%)',
@@ -119,35 +146,77 @@ export default function App() {
           zIndex: 1
         }}
       />
-      
-      {/* iPod-style header */}
-      <div className="relative flex items-center justify-between p-4 bg-black/20 backdrop-blur-md" style={{ zIndex: 500 }}>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-white rounded-full shadow-sm"></div>
-          <span className="text-sm font-medium tracking-wide text-gray-300">iPod</span>
-          <div className="w-4 h-2 ml-1">
-            <svg viewBox="0 0 24 24" fill="currentColor" className="w-full h-full text-white/70">
-              <path d="M2 17h20v2H2zm1.15-4.05L4 11.47l.85 1.48L6 12l-1.15-.95zM12 8l-6 6h12l-6-6z"/>
-            </svg>
-          </div>
-        </div>
-        <div className="text-sm font-medium text-gray-300">
-          {loading ? 'Loading...' : displayText}
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-6 h-3 bg-gradient-to-r from-green-400 to-green-500 rounded-sm shadow-sm"></div>
-          <div className="text-xs text-gray-400">100%</div>
+
+      {/* ── Slide-down search drawer ── */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 600,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+        }}
+      >
+        {/* Search panel – slides in/out */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '480px',
+            overflow: 'hidden',
+            maxHeight: searchOpen ? '80px' : '0px',
+            transition: 'max-height 0.35s cubic-bezier(0.4,0,0.2,1)',
+            paddingTop: searchOpen ? '12px' : '0px',
+          }}
+        >
+          <SearchBar onSearch={handleSearch} />
         </div>
 
-      </div>
-
-      {/* Search Bar */}
-      <div className="relative p-4" style={{ zIndex: 450 }}>
-        <SearchBar onSearch={handleSearch} />
+        {/* Draggable pill handle */}
+        <div
+          onPointerDown={handleHandlePointerDown}
+          onPointerMove={handleHandlePointerMove}
+          onPointerUp={handleHandlePointerUp}
+          style={{
+            marginTop: '6px',
+            cursor: 'grab',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            userSelect: 'none',
+            touchAction: 'none',
+            padding: '6px 16px',
+          }}
+          title={searchOpen ? 'Close search' : 'Open search'}
+        >
+          {/* Pill */}
+          <div style={{
+            width: '36px',
+            height: '4px',
+            borderRadius: '9999px',
+            background: searchOpen ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.25)',
+            transition: 'background 0.2s, transform 0.2s',
+            transform: searchOpen ? 'scaleX(0.7)' : 'scaleX(1)',
+          }} />
+          {/* Chevron arrow */}
+          <svg
+            width="16" height="10" viewBox="0 0 16 10" fill="none"
+            style={{
+              transition: 'transform 0.35s',
+              transform: searchOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              opacity: 0.45,
+            }}
+          >
+            <path d="M1 1.5L8 8.5L15 1.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
       </div>
 
       {/* Main Content */}
-      <div className="relative flex-1 flex flex-col items-center justify-center px-4 md:px-8 pb-16" style={{ zIndex: 200, height: 'calc(100vh - 140px)' }}>
+      <div className="relative flex-1 flex flex-col items-center justify-center px-4 md:px-8 pb-16" style={{ zIndex: 200, height: '100vh' }}>
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-400"></div>
@@ -156,7 +225,7 @@ export default function App() {
         ) : error ? (
           <div className="text-center text-red-400">
             <p>{error}</p>
-            <button 
+            <button
               onClick={() => fetchSongs()}
               className="mt-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
             >
@@ -166,7 +235,7 @@ export default function App() {
         ) : songs.length === 0 ? (
           <div className="text-center text-gray-400">
             <p>No songs found for "{searchQuery}"</p>
-            <button 
+            <button
               onClick={() => fetchSongs()}
               className="mt-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
             >
@@ -175,18 +244,17 @@ export default function App() {
           </div>
         ) : (
           <>
-            <CoverFlow 
-              songs={songs} 
+            <CoverFlow
+              songs={songs}
               onSongSelect={handleSongSelect}
               selectedSong={selectedSong}
               isPlaying={isPlaying}
               getCover={getCover}
               isLoading={isLoading}
             />
-            
+
             {selectedSong && (
               <div className="mt-8 text-center relative" style={{ zIndex: 250 }}>
-                {/* Always visible song info with enhanced contrast when playing */}
                 <div className="bg-transparent p-2">
                   <h2 className="text-xl font-light mb-2 text-white drop-shadow-lg">
                     {selectedSong.title}
@@ -199,8 +267,8 @@ export default function App() {
                       from {selectedSong.albumName} {selectedSong.year && `(${selectedSong.year})`}
                     </p>
                   )}
-                  <Player 
-                    youtubeId={selectedSong.youtubeId} 
+                  <Player
+                    youtubeId={selectedSong.youtubeId}
                     onPlayingChange={handlePlayingChange}
                   />
                 </div>
